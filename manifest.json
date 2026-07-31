@@ -8,6 +8,14 @@
     "overview": "Pause or exit playback after a selected duration",
     "versions": [
       {
+        "version": "1.2.0.0",
+        "changelog": "Moved Sleep Timer into Jellyfin's native player settings menu, removed the fragile control-bar selector, and added client diagnostics.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/Dormiveglia0/Jellyfin.Plugin.SleepTimer/releases/download/v1.2.0.0/Jellyfin.Plugin.SleepTimer_1.2.0.0.zip",
+        "checksum": "1b41e9f441fb2a21b6cd05f8bb788d4c",
+        "timestamp": "2026-07-31T08:31:25Z"
+      },
+      {
         "version": "1.1.0.0",
         "changelog": "Redesigned player UI with native Jellyfin theme inheritance, responsive layouts, and repository installation.",
         "targetAbi": "10.11.0.0",
