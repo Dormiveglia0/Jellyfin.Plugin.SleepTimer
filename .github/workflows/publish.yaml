@@ -1,18 +1,122 @@
-name: '🚀 Publish Plugin'
+name: Release
 
 on:
-  release:
-    types:
-      - released
+  push:
+    tags:
+      - "v*.*.*.*"
   workflow_dispatch:
+    inputs:
+      version:
+        description: Four-part plugin version, without the leading v
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  call:
-    uses: jellyfin/jellyfin-meta-plugins/.github/workflows/publish.yaml@master
-    with:
-      version: ${{ github.event.release.tag_name }}
-      is-unstable: ${{ github.event.release.prerelease }}
-    secrets:
-      deploy-host: ${{ secrets.DEPLOY_HOST }}
-      deploy-user: ${{ secrets.DEPLOY_USER }}
-      deploy-key: ${{ secrets.DEPLOY_KEY }}
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Resolve release metadata
+        id: metadata
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+            TAG="${GITHUB_REF_NAME}"
+          else
+            VERSION="${{ inputs.version }}"
+            TAG="v${VERSION}"
+          fi
+
+          PROJECT_VERSION="$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' Directory.Build.props)"
+          TARGET_ABI="$(sed -n 's/^targetAbi: *"\(.*\)"/\1/p' build.yaml)"
+          if [[ "${VERSION}" != "${PROJECT_VERSION}" ]]; then
+            echo "Tag/input version ${VERSION} does not match project version ${PROJECT_VERSION}."
+            exit 1
+          fi
+
+          echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
+          echo "tag=${TAG}" >> "${GITHUB_OUTPUT}"
+          echo "target_abi=${TARGET_ABI}" >> "${GITHUB_OUTPUT}"
+          echo "artifact=Jellyfin.Plugin.SleepTimer_${VERSION}.zip" >> "${GITHUB_OUTPUT}"
+
+      - name: Restore and build
+        run: |
+          dotnet restore Jellyfin.Plugin.SleepTimer.sln
+          dotnet build Jellyfin.Plugin.SleepTimer.sln --configuration Release --no-restore
+
+      - name: Package plugin
+        id: package
+        shell: bash
+        run: |
+          ARTIFACT="${{ steps.metadata.outputs.artifact }}"
+          zip -j "${ARTIFACT}" \
+            "Jellyfin.Plugin.SleepTimer/bin/Release/net9.0/Jellyfin.Plugin.SleepTimer.dll"
+          CHECKSUM="$(md5sum "${ARTIFACT}" | cut -d ' ' -f 1)"
+          echo "checksum=${CHECKSUM}" >> "${GITHUB_OUTPUT}"
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT: ${{ steps.metadata.outputs.artifact }}
+          TAG: ${{ steps.metadata.outputs.tag }}
+          VERSION: ${{ steps.metadata.outputs.version }}
+        shell: bash
+        run: |
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            gh release upload "${TAG}" "${ARTIFACT}" --clobber
+          else
+            gh release create "${TAG}" "${ARTIFACT}" \
+              --title "Sleep Timer ${VERSION}" \
+              --notes "Theme-aware sleep timer for Jellyfin Web 10.11.x. Includes pause/stop actions, responsive controls, and custom-theme inheritance."
+          fi
+
+      - name: Update plugin repository manifest
+        env:
+          VERSION: ${{ steps.metadata.outputs.version }}
+          TAG: ${{ steps.metadata.outputs.tag }}
+          TARGET_ABI: ${{ steps.metadata.outputs.target_abi }}
+          ARTIFACT: ${{ steps.metadata.outputs.artifact }}
+          CHECKSUM: ${{ steps.package.outputs.checksum }}
+        shell: bash
+        run: |
+          git fetch origin main
+          git checkout -B manifest-update origin/main
+
+          SOURCE_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/${ARTIFACT}"
+          TIMESTAMP="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          python scripts/update_manifest.py \
+            --manifest manifest.json \
+            --version "${VERSION}" \
+            --target-abi "${TARGET_ABI}" \
+            --source-url "${SOURCE_URL}" \
+            --checksum "${CHECKSUM}" \
+            --timestamp "${TIMESTAMP}" \
+            --changelog "Redesigned player UI with native Jellyfin theme inheritance, responsive layouts, and repository installation."
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add manifest.json
+          if git diff --cached --quiet; then
+            echo "Manifest is already up to date."
+          else
+            git commit -m "Update manifest for ${VERSION} [skip ci]"
+            git push origin HEAD:main
+          fi

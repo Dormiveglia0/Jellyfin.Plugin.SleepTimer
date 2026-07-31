@@ -1,0 +1,11 @@
+[
+  {
+    "category": "General",
+    "guid": "22cf1cd3-eefa-4126-8368-6b79872d2632",
+    "name": "Sleep Timer",
+    "description": "Adds a theme-aware sleep timer to Jellyfin Web playback controls. Timers can pause playback or exit the current video.",
+    "owner": "Dormiveglia0",
+    "overview": "Pause or exit playback after a selected duration",
+    "versions": []
+  }
+]

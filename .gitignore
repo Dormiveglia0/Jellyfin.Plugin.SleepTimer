@@ -2,4 +2,6 @@ bin/
 obj/
 .vs/
 .idea/
-artifacts
+artifacts/
+__pycache__/
+*.pyc

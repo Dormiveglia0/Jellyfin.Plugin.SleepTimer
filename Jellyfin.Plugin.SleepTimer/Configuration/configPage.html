@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <title>Sleep Timer</title>
+</head>
+<body>
+    <div id="SleepTimerConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-select,emby-checkbox">
+        <div data-role="content">
+            <div class="content-primary">
+                <h2>定时关闭</h2>
+                <p class="fieldDescription">
+                    播放器中的月亮按钮允许每个用户、每台设备设置独立倒计时。倒计时由服务器执行，浏览器进入后台后仍然有效。
+                </p>
+                <form id="SleepTimerConfigForm">
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="PresetMinutes">快捷时间（分钟）</label>
+                        <input id="PresetMinutes" name="PresetMinutes" type="text" is="emby-input" />
+                        <div class="fieldDescription">使用英文逗号分隔，最多显示 12 项。例如：15,30,45,60,90,120</div>
+                    </div>
+
+                    <div class="selectContainer">
+                        <label class="selectLabel" for="DefaultAction">默认到时操作</label>
+                        <select is="emby-select" id="DefaultAction" name="DefaultAction" class="emby-select-withcolor emby-select">
+                            <option value="Pause">暂停播放</option>
+                            <option value="Stop">退出视频</option>
+                        </select>
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="MaximumMinutes">最长自定义时间（分钟）</label>
+                        <input id="MaximumMinutes" name="MaximumMinutes" type="number" is="emby-input" min="1" max="1440" step="1" />
+                        <div class="fieldDescription">允许范围为 1–1440 分钟。</div>
+                    </div>
+
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label class="emby-checkbox-label">
+                            <input id="AllowCustomDuration" name="AllowCustomDuration" type="checkbox" is="emby-checkbox" />
+                            <span>允许在播放器中输入自定义时间</span>
+                        </label>
+                    </div>
+
+                    <div>
+                        <button is="emby-button" type="submit" class="raised button-submit block emby-button">
+                            <span>保存</span>
+                        </button>
+                    </div>
+                </form>
+
+                <div class="verticalSection" style="margin-top:2em">
+                    <h3>Web 播放控件注入</h3>
+                    <p class="fieldDescription">
+                        插件会优先使用 File Transformation，其次使用 JavaScript Injector；两者都未安装时，会仅在 Jellyfin Web 的 index.html 中维护一段带明确起止标记的脚本标签。安装或卸载后需要重启 Jellyfin。
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <script type="text/javascript">
+            (function () {
+                'use strict';
+
+                var pluginUniqueId = '22cf1cd3-eefa-4126-8368-6b79872d2632';
+                var page = document.querySelector('#SleepTimerConfigPage');
+                var form = document.querySelector('#SleepTimerConfigForm');
+
+                page.addEventListener('pageshow', function () {
+                    Dashboard.showLoadingMsg();
+                    ApiClient.getPluginConfiguration(pluginUniqueId).then(function (config) {
+                        document.querySelector('#PresetMinutes').value = config.PresetMinutes || '15,30,45,60,90,120';
+                        document.querySelector('#DefaultAction').value = config.DefaultAction || 'Pause';
+                        document.querySelector('#MaximumMinutes').value = config.MaximumMinutes || 720;
+                        document.querySelector('#AllowCustomDuration').checked = config.AllowCustomDuration !== false;
+                        Dashboard.hideLoadingMsg();
+                    });
+                });
+
+                form.addEventListener('submit', function (event) {
+                    event.preventDefault();
+                    Dashboard.showLoadingMsg();
+
+                    ApiClient.getPluginConfiguration(pluginUniqueId).then(function (config) {
+                        config.PresetMinutes = document.querySelector('#PresetMinutes').value.trim();
+                        config.DefaultAction = document.querySelector('#DefaultAction').value;
+                        config.MaximumMinutes = parseInt(document.querySelector('#MaximumMinutes').value, 10) || 720;
+                        config.AllowCustomDuration = document.querySelector('#AllowCustomDuration').checked;
+
+                        ApiClient.updatePluginConfiguration(pluginUniqueId, config).then(function (result) {
+                            Dashboard.processPluginConfigurationUpdateResult(result);
+                        });
+                    });
+
+                    return false;
+                });
+            }());
+        </script>
+    </div>
+</body>
+</html>
