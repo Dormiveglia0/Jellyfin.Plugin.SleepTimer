@@ -1,10 +1,10 @@
 # Jellyfin Sleep Timer
 
-为 Jellyfin Web 播放器增加“定时关闭”按钮。用户可以选择快捷时间或输入预计播放分钟数，倒计时结束后自动暂停播放或退出视频。
+在 Jellyfin Web 播放器的齿轮设置菜单中增加“定时关闭”。用户可以选择快捷时间或输入预计播放分钟数，倒计时结束后自动暂停播放或退出视频。
 
 ## 功能
 
-- 在视频播放控制栏中增加月亮按钮，并实时显示剩余分钟数
+- 在视频播放设置菜单中增加原生风格的“定时关闭”，并实时显示精确倒计时
 - 内置 15、30、45、60、90、120 分钟快捷项，管理员可修改
 - 支持 1–1440 分钟自定义时长
 - 到时操作可选“暂停播放”或“退出视频”
@@ -60,19 +60,19 @@ volumes:
 
 ## 手动安装
 
-1. 从 GitHub Releases 下载 `Jellyfin.Plugin.SleepTimer_1.1.0.0.zip`。
+1. 从 GitHub Releases 下载 `Jellyfin.Plugin.SleepTimer_1.2.0.0.zip`。
 2. 停止 Jellyfin。
-3. 在容器的 `/config/plugins` 下新建 `Sleep Timer_1.1.0.0` 文件夹。
+3. 在容器的 `/config/plugins` 下新建 `Sleep Timer_1.2.0.0` 文件夹。
 4. 将 ZIP 中的 `Jellyfin.Plugin.SleepTimer.dll` 解压到该文件夹。
 5. 启动 Jellyfin 并强制刷新 Web 页面。
 
 ## 使用
 
 1. 开始播放视频并唤出播放控制栏。
-2. 点击月亮图标。
+2. 点击齿轮“设置”，在“清晰度”等选项旁点击“定时关闭”。
 3. 选择“暂停播放”或“退出视频”。
 4. 点击快捷时间，或输入分钟数后点击“开始计时”。
-5. 激活后，按钮右上角显示剩余分钟；再次打开面板可查看精确倒计时或取消。
+5. 激活后，设置菜单中的“定时关闭”会显示精确倒计时；再次点击可查看或取消。
 
 “退出视频”会向当前 Jellyfin 会话发送原生 `Stop` 指令；Web 客户端会结束播放并离开播放器。
 
@@ -81,13 +81,30 @@ volumes:
 播放器弹窗不会绑定固定背景色或固定主题色，而是复用 Jellyfin 的原生样式入口：
 
 - `.dialog`：弹窗背景和正文颜色
+- `.listItem` / `.actionSheetItemText`：播放器设置菜单入口
 - `.raised`：普通按钮
 - `.button-submit`：选中状态和主操作
 - `.emby-input`：自定义时长输入框
-- `.buttonActive` / `.countIndicator`：倒计时强调色
+- `.buttonActive`：倒计时强调色
 - `.secondaryText` / `.toast`：辅助文字和通知
 
 因此 Jellyfin 内置深色、浅色主题以及覆盖这些原生类的自定义 CSS 会同步作用于插件。插件 CSS 只负责布局、间距、响应式和可访问性。
+
+## 前端排查
+
+安装或升级后必须重启 Jellyfin，并对 Web 页面执行一次强制刷新。开发者工具控制台应出现：
+
+```text
+[Sleep Timer] Client initialized. Open the player settings menu to use it.
+```
+
+也可以在控制台运行：
+
+```javascript
+window.JellyfinSleepTimer?.diagnostics()
+```
+
+结果会显示客户端版本、API 状态、已插入的菜单项数量和当前计时器状态。插件自身日志统一以 `[Sleep Timer]` 开头；来自浏览器扩展的 `content.js` 报错通常与插件无关，可以使用无扩展的隐私窗口交叉验证。
 
 ## 管理员配置
 
@@ -115,7 +132,7 @@ dotnet build .\Jellyfin.Plugin.SleepTimer.sln --configuration Release
 Jellyfin.Plugin.SleepTimer/bin/Release/net9.0/Jellyfin.Plugin.SleepTimer.dll
 ```
 
-推送四段式版本标签（例如 `v1.1.0.0`）会触发 GitHub Actions：
+推送四段式版本标签（例如 `v1.2.0.0`）会触发 GitHub Actions：
 
 1. 构建并打包插件 DLL。
 2. 创建 GitHub Release 并上传 ZIP。

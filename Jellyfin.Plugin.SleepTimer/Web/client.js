@@ -15,6 +15,8 @@
     const copy = {
         zh: {
             title: '定时关闭',
+            menuInactive: '未设置',
+            menuHint: '暂停播放或退出视频',
             inactive: '选择时长开始计时',
             active: '剩余 {time}',
             activeMeta: '时间结束时 · {action}',
@@ -40,6 +42,8 @@
         },
         en: {
             title: 'Sleep Timer',
+            menuInactive: 'Not set',
+            menuHint: 'Pause playback or exit the video',
             inactive: 'Choose a duration to start',
             active: '{time} remaining',
             activeMeta: 'When time ends · {action}',
@@ -79,12 +83,12 @@
         },
         status: { isActive: false },
         selectedAction: 'pause',
-        button: null,
         dialog: null,
         busy: false,
         failsafeTimerId: null,
         observer: null,
-        ensureQueued: false
+        ensureQueued: false,
+        settingsOpenedAt: 0
     };
 
     function text(key, values) {
@@ -230,7 +234,7 @@
             state.selectedAction = state.status.action;
         }
 
-        renderButton();
+        renderMenuEntries();
         renderDialogStatus();
     }
 
@@ -259,7 +263,7 @@
 
             state.status = normalizeStatus(result);
             state.failsafeTimerId = null;
-            renderButton();
+            renderMenuEntries();
             closeDialog();
             showToast(text('started', {
                 minutes: duration,
@@ -286,7 +290,7 @@
             await apiRequest('cancel', 'POST', null, { deviceId: deviceId() });
             state.status = { isActive: false };
             state.failsafeTimerId = null;
-            renderButton();
+            renderMenuEntries();
             closeDialog();
             showToast(text('cancelled'));
         } catch (error) {
@@ -337,79 +341,119 @@
         return action === 'stop' ? text('stop') : text('pause');
     }
 
-    function findControls() {
-        return document.querySelector('#videoOsdPage .videoOsdBottom-maincontrols .buttons.focuscontainer-x') ||
-            document.querySelector('#videoOsdPage .videoOsdBottom .buttons') ||
-            document.querySelector('.videoOsdBottom-maincontrols .buttons.focuscontainer-x');
+    function isPlayerSettingsSheet(sheet) {
+        const ids = new Set(
+            Array.from(sheet.querySelectorAll('.actionSheetMenuItem[data-id]'))
+                .map(function (item) { return item.getAttribute('data-id'); }));
+        const openedFromSettingsButton =
+            state.settingsOpenedAt > 0 &&
+            Date.now() - state.settingsOpenedAt < 2500;
+        const looksLikePlayerSettings =
+            ids.has('stats') &&
+            ['quality', 'aspectratio', 'playbackrate', 'repeatmode', 'suboffset']
+                .some(function (id) { return ids.has(id); });
+
+        return openedFromSettingsButton || looksLikePlayerSettings;
     }
 
-    function ensureButton() {
-        const controls = findControls();
-        if (!controls) {
-            state.button = null;
-            return;
-        }
-
-        const existing = controls.querySelector('.btnSleepTimer');
-        if (existing) {
-            state.button = existing;
-            renderButton();
-            return;
+    function createMenuEntry(sheet) {
+        const scroller = sheet.querySelector('.actionSheetScroller');
+        if (!scroller || sheet.querySelector('.sleepTimerPluginMenuItem')) {
+            return false;
         }
 
         const button = document.createElement('button');
-        button.setAttribute('is', 'paper-icon-button-light');
+        button.setAttribute('is', 'emby-button');
         button.setAttribute('type', 'button');
-        button.className = 'btnSleepTimer sleepTimerPluginButton autoSize paper-icon-button-light';
-        button.setAttribute('aria-label', text('title'));
-        button.innerHTML = '<span class="xlargePaperIconButton material-icons sleepTimerPluginIcon" aria-hidden="true">bedtime</span>' +
-            '<span class="sleepTimerPluginBadge countIndicator" aria-hidden="true"></span>';
+        button.setAttribute('aria-haspopup', 'dialog');
+        button.className =
+            'listItem listItem-button sleepTimerPluginMenuItem emby-button';
+        button.innerHTML = [
+            '<div class="listItemBody actionsheetListItemBody">',
+            '  <div class="listItemBodyText actionSheetItemText">' + text('title') + '</div>',
+            '  <div class="listItemBodyText secondary sleepTimerPluginMenuSecondary"></div>',
+            '</div>',
+            '<div class="listItemAside actionSheetItemAsideText sleepTimerPluginMenuAside"></div>'
+        ].join('');
         button.addEventListener('click', function (event) {
+            // This intentionally is not an .actionSheetMenuItem. Jellyfin owns
+            // that class and would close the parent sheet with an unknown id.
             event.preventDefault();
             event.stopPropagation();
             showDialog();
         });
 
-        const anchor = controls.querySelector('.btnSubtitles') ||
-            controls.querySelector('.btnUserRating') ||
-            controls.querySelector('.btnVideoOsdSettings');
-        if (anchor) {
-            anchor.insertAdjacentElement('beforebegin', button);
+        const qualityItem = scroller.querySelector(
+            '.actionSheetMenuItem[data-id="quality"]');
+        const statsItem = scroller.querySelector(
+            '.actionSheetMenuItem[data-id="stats"]');
+        if (qualityItem) {
+            qualityItem.insertAdjacentElement('afterend', button);
+        } else if (statsItem) {
+            statsItem.insertAdjacentElement('beforebegin', button);
         } else {
-            controls.appendChild(button);
+            scroller.appendChild(button);
         }
 
-        state.button = button;
-        renderButton();
+        return true;
     }
 
-    function renderButton() {
-        const button = state.button && document.contains(state.button)
-            ? state.button
-            : document.querySelector('.btnSleepTimer');
-        if (!button) {
+    function ensureSettingsMenuEntries() {
+        let injectedFromPendingClick = false;
+        document.querySelectorAll('.actionSheet').forEach(function (sheet) {
+            if (!isPlayerSettingsSheet(sheet)) {
+                return;
+            }
+
+            if (createMenuEntry(sheet)) {
+                injectedFromPendingClick = state.settingsOpenedAt > 0;
+            }
+        });
+
+        if (injectedFromPendingClick) {
+            state.settingsOpenedAt = 0;
+        }
+        renderMenuEntries();
+    }
+
+    function renderMenuEntries() {
+        const seconds = remainingSeconds();
+        const active = state.status.isActive && seconds > 0;
+        document.querySelectorAll('.sleepTimerPluginMenuItem').forEach(function (button) {
+            const secondary = button.querySelector('.sleepTimerPluginMenuSecondary');
+            const aside = button.querySelector('.sleepTimerPluginMenuAside');
+            const countdown = active ? formatRemaining(seconds) : text('menuInactive');
+            const secondaryText = active
+                ? text('activeMeta', { action: actionLabel(state.status.action) })
+                : text('menuHint');
+            const ariaLabel =
+                text('title') + ', ' + countdown + ', ' + secondaryText;
+
+            button.classList.toggle('is-active', active);
+            aside.classList.toggle('buttonActive', active);
+            if (aside.textContent !== countdown) {
+                aside.textContent = countdown;
+            }
+            if (secondary.textContent !== secondaryText) {
+                secondary.textContent = secondaryText;
+            }
+            if (button.getAttribute('aria-label') !== ariaLabel) {
+                button.setAttribute('aria-label', ariaLabel);
+            }
+        });
+    }
+
+    function markPlayerSettingsOpen(event) {
+        const target = event.target instanceof Element
+            ? event.target.closest('.btnVideoOsdSettings')
+            : null;
+        if (!target) {
             return;
         }
 
-        state.button = button;
-        const badge = button.querySelector('.sleepTimerPluginBadge');
-        const icon = button.querySelector('.sleepTimerPluginIcon');
-        const seconds = remainingSeconds();
-
-        button.classList.toggle('is-active', state.status.isActive);
-        icon?.classList.toggle('buttonActive', state.status.isActive);
-        if (state.status.isActive) {
-            const countdown = formatRemaining(seconds);
-            button.title = text('activeTitle', { time: countdown });
-            button.setAttribute('aria-label', button.title);
-            badge.textContent = seconds >= 3600
-                ? Math.ceil(seconds / 3600) + 'h'
-                : Math.max(1, Math.ceil(seconds / 60)) + 'm';
-        } else {
-            button.title = text('title');
-            button.setAttribute('aria-label', text('title'));
-            badge.textContent = '';
-        }
+        state.settingsOpenedAt = Date.now();
+        window.setTimeout(scheduleEnsureSettingsMenuEntries, 0);
+        window.setTimeout(scheduleEnsureSettingsMenuEntries, 120);
     }
 
     function showDialog() {
@@ -658,8 +702,8 @@
     }
 
     function tick() {
+        renderMenuEntries();
         if (state.status.isActive) {
-            renderButton();
             renderDialogStatus();
             runClientFailsafe();
         }
@@ -685,7 +729,7 @@
         }, 3200);
     }
 
-    function scheduleEnsureButton() {
+    function scheduleEnsureSettingsMenuEntries() {
         if (state.ensureQueued) {
             return;
         }
@@ -693,7 +737,7 @@
         state.ensureQueued = true;
         window.requestAnimationFrame(function () {
             state.ensureQueued = false;
-            ensureButton();
+            ensureSettingsMenuEntries();
         });
     }
 
@@ -702,11 +746,12 @@
             await waitForApiClient();
             await loadStyles();
             await Promise.allSettled([loadOptions(), loadStatus()]);
-            ensureButton();
+            ensureSettingsMenuEntries();
 
-            state.observer = new MutationObserver(scheduleEnsureButton);
+            state.observer = new MutationObserver(scheduleEnsureSettingsMenuEntries);
             state.observer.observe(document.body, { childList: true, subtree: true });
-            window.addEventListener('hashchange', scheduleEnsureButton);
+            document.addEventListener('click', markPlayerSettingsOpen, true);
+            window.addEventListener('hashchange', scheduleEnsureSettingsMenuEntries);
             window.setInterval(tick, 1000);
             window.setInterval(function () {
                 loadStatus().catch(function (error) {
@@ -715,10 +760,22 @@
             }, 5000);
 
             window.JellyfinSleepTimer = {
+                version: clientVersion() || '1.2.0.0',
                 open: showDialog,
                 refresh: loadStatus,
-                cancel: cancelTimer
+                cancel: cancelTimer,
+                diagnostics: function () {
+                    return {
+                        version: clientVersion() || '1.2.0.0',
+                        apiReady: apiClientReady(),
+                        menuEntries: document.querySelectorAll(
+                            '.sleepTimerPluginMenuItem').length,
+                        status: state.status
+                    };
+                }
             };
+            console.info(
+                '[Sleep Timer] Client initialized. Open the player settings menu to use it.');
         } catch (error) {
             console.error('[Sleep Timer] Client initialization failed:', error);
         }

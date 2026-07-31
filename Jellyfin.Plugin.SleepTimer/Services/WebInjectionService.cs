@@ -158,7 +158,7 @@ public sealed partial class WebInjectionService : IHostedService
         if (!File.Exists(indexPath))
         {
             logger.LogError(
-                "Jellyfin Web index.html was not found at {IndexPath}. Install File Transformation or JavaScript Injector to enable the player button",
+                "Jellyfin Web index.html was not found at {IndexPath}. Install File Transformation or JavaScript Injector to enable the player settings entry",
                 indexPath);
             return;
         }

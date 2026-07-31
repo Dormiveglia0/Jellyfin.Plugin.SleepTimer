@@ -1,10 +1,10 @@
 ---
 name: "Sleep Timer"
 guid: "22cf1cd3-eefa-4126-8368-6b79872d2632"
-version: "1.1.0.0"
+version: "1.2.0.0"
 targetAbi: "10.11.0.0"
 framework: "net9.0"
-overview: "Adds a sleep timer to Jellyfin Web playback controls."
+overview: "Adds a sleep timer to the Jellyfin Web player settings menu."
 description: >
   Adds per-user, per-device playback timers to Jellyfin Web.
   When a timer expires, playback is paused or stopped according
@@ -14,5 +14,5 @@ owner: "Dormiveglia0"
 artifacts:
 - "Jellyfin.Plugin.SleepTimer.dll"
 changelog: >
-  Redesigned the player dialog, added native Jellyfin theme inheritance,
-  responsive light/dark/custom-theme support, and repository installation.
+  Moved Sleep Timer into Jellyfin's native player settings menu, removed the
+  fragile control-bar selector, and added client diagnostics.
