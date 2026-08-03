@@ -17,7 +17,6 @@
             title: '定时关闭',
             menuInactive: '未设置',
             menuHint: '暂停播放或退出视频',
-            inactive: '选择时长开始计时',
             active: '剩余 {time}',
             activeMeta: '时间结束时 · {action}',
             activeTitle: '定时关闭：剩余 {time}',
@@ -44,7 +43,6 @@
             title: 'Sleep Timer',
             menuInactive: 'Not set',
             menuHint: 'Pause playback or exit the video',
-            inactive: 'Choose a duration to start',
             active: '{time} remaining',
             activeMeta: 'When time ends · {action}',
             activeTitle: 'Sleep timer: {time} remaining',
@@ -88,8 +86,13 @@
         failsafeTimerId: null,
         observer: null,
         ensureQueued: false,
-        settingsOpenedAt: 0
+        settingsOpenedAt: 0,
+        settingsButton: null,
+        pendingDialogOpen: false,
+        expectedActionSheetCloseUntil: 0
     };
+
+    const actionSheetDismissedMessage = 'ActionSheet closed without resolving';
 
     function text(key, values) {
         let result = messages[key] || key;
@@ -363,7 +366,6 @@
         }
 
         const button = document.createElement('button');
-        button.setAttribute('is', 'emby-button');
         button.setAttribute('type', 'button');
         button.setAttribute('aria-haspopup', 'dialog');
         button.className =
@@ -371,7 +373,6 @@
         button.innerHTML = [
             '<div class="listItemBody actionsheetListItemBody">',
             '  <div class="listItemBodyText actionSheetItemText">' + text('title') + '</div>',
-            '  <div class="listItemBodyText secondary sleepTimerPluginMenuSecondary"></div>',
             '</div>',
             '<div class="listItemAside actionSheetItemAsideText sleepTimerPluginMenuAside"></div>'
         ].join('');
@@ -380,13 +381,21 @@
             // that class and would close the parent sheet with an unknown id.
             event.preventDefault();
             event.stopPropagation();
-            showDialog();
+            openDialogFromSettings(button);
         });
 
         const qualityItem = scroller.querySelector(
             '.actionSheetMenuItem[data-id="quality"]');
         const statsItem = scroller.querySelector(
             '.actionSheetMenuItem[data-id="stats"]');
+        const referenceItem = qualityItem || statsItem ||
+            scroller.querySelector('.actionSheetMenuItem');
+        ['listItem-border', 'listItem-focusscale', 'actionsheet-xlargeFont']
+            .forEach(function (className) {
+                if (referenceItem?.classList.contains(className)) {
+                    button.classList.add(className);
+                }
+            });
         if (qualityItem) {
             qualityItem.insertAdjacentElement('afterend', button);
         } else if (statsItem) {
@@ -420,27 +429,87 @@
         const seconds = remainingSeconds();
         const active = state.status.isActive && seconds > 0;
         document.querySelectorAll('.sleepTimerPluginMenuItem').forEach(function (button) {
-            const secondary = button.querySelector('.sleepTimerPluginMenuSecondary');
             const aside = button.querySelector('.sleepTimerPluginMenuAside');
             const countdown = active ? formatRemaining(seconds) : text('menuInactive');
-            const secondaryText = active
+            const ariaDetail = active
                 ? text('activeMeta', { action: actionLabel(state.status.action) })
                 : text('menuHint');
             const ariaLabel =
-                text('title') + ', ' + countdown + ', ' + secondaryText;
+                text('title') + ', ' + countdown + ', ' + ariaDetail;
 
             button.classList.toggle('is-active', active);
             aside.classList.toggle('buttonActive', active);
             if (aside.textContent !== countdown) {
                 aside.textContent = countdown;
             }
-            if (secondary.textContent !== secondaryText) {
-                secondary.textContent = secondaryText;
-            }
             if (button.getAttribute('aria-label') !== ariaLabel) {
                 button.setAttribute('aria-label', ariaLabel);
             }
         });
+    }
+
+    function ignoreExpectedActionSheetDismissal(event) {
+        const reason = event.reason;
+        const message = reason && typeof reason.message === 'string'
+            ? reason.message
+            : String(reason || '');
+        if (Date.now() <= state.expectedActionSheetCloseUntil &&
+            message === actionSheetDismissedMessage) {
+            state.expectedActionSheetCloseUntil = 0;
+            event.preventDefault();
+        }
+    }
+
+    function openDialogFromSettings(button) {
+        if (state.pendingDialogOpen) {
+            return;
+        }
+
+        const sheet = button.closest('.actionSheet');
+        const returnFocus = state.settingsButton instanceof HTMLElement &&
+            document.contains(state.settingsButton)
+            ? state.settingsButton
+            : null;
+        if (!sheet || sheet.classList.contains('hide')) {
+            showDialog(returnFocus);
+            return;
+        }
+
+        state.pendingDialogOpen = true;
+        state.expectedActionSheetCloseUntil = Date.now() + 4000;
+        let completed = false;
+        let fallbackTimerId = null;
+        const openAfterClose = function () {
+            if (completed) {
+                return;
+            }
+
+            completed = true;
+            state.pendingDialogOpen = false;
+            if (fallbackTimerId) {
+                window.clearTimeout(fallbackTimerId);
+            }
+            sheet.removeEventListener('close', openAfterClose);
+            window.setTimeout(function () {
+                showDialog(returnFocus);
+            }, 0);
+        };
+
+        sheet.addEventListener('close', openAfterClose, { once: true });
+        window.history.back();
+        fallbackTimerId = window.setTimeout(function () {
+            if (!sheet.isConnected || sheet.classList.contains('hide')) {
+                openAfterClose();
+                return;
+            }
+
+            completed = true;
+            state.pendingDialogOpen = false;
+            state.expectedActionSheetCloseUntil = 0;
+            sheet.removeEventListener('close', openAfterClose);
+            console.warn('[Sleep Timer] Player settings menu did not close in time.');
+            showToast(text('error'), true);
+        }, 1500);
     }
 
     function markPlayerSettingsOpen(event) {
@@ -452,14 +521,17 @@
         }
 
         state.settingsOpenedAt = Date.now();
+        state.settingsButton = target;
         window.setTimeout(scheduleEnsureSettingsMenuEntries, 0);
         window.setTimeout(scheduleEnsureSettingsMenuEntries, 120);
     }
 
-    function showDialog() {
+    function showDialog(returnFocus) {
         closeDialog();
 
-        const previousFocus = document.activeElement instanceof HTMLElement
+        const previousFocus = returnFocus instanceof HTMLElement
+            ? returnFocus
+            : document.activeElement instanceof HTMLElement
             ? document.activeElement
             : null;
         const overlay = document.createElement('div');
@@ -471,7 +543,7 @@
             '      <span class="material-icons sleepTimerPluginMoon buttonActive" aria-hidden="true">bedtime</span>',
             '      <h2 id="sleepTimerPluginTitle">' + text('title') + '</h2>',
             '    </div>',
-            '    <button type="button" is="paper-icon-button-light" class="sleepTimerPluginClose paper-icon-button-light" aria-label="' + text('close') + '">',
+            '    <button type="button" class="sleepTimerPluginClose paper-icon-button-light" aria-label="' + text('close') + '">',
             '      <span class="material-icons" aria-hidden="true">close</span>',
             '    </button>',
             '  </header>',
@@ -481,9 +553,9 @@
             '  </div>',
             '  <div class="sleepTimerPluginSection">',
             '    <div class="sleepTimerPluginLabel">' + text('actionLabel') + '</div>',
-            '    <div class="sleepTimerPluginActions" role="group">',
-            '      <button type="button" is="emby-button" class="sleepTimerPluginChoice emby-button raised" data-action="pause"><span class="material-icons" aria-hidden="true">pause</span><span>' + text('pause') + '</span></button>',
-            '      <button type="button" is="emby-button" class="sleepTimerPluginChoice emby-button raised" data-action="stop"><span class="material-icons" aria-hidden="true">stop</span><span>' + text('stop') + '</span></button>',
+            '    <div class="sleepTimerPluginActions" role="group" aria-label="' + text('actionLabel') + '">',
+            '      <button type="button" class="sleepTimerPluginChoice emby-button raised" data-action="pause"><span class="material-icons" aria-hidden="true">pause</span><span>' + text('pause') + '</span></button>',
+            '      <button type="button" class="sleepTimerPluginChoice emby-button raised" data-action="stop"><span class="material-icons" aria-hidden="true">stop</span><span>' + text('stop') + '</span></button>',
             '    </div>',
             '  </div>',
             '  <div class="sleepTimerPluginSection">',
@@ -491,7 +563,7 @@
             '    <div class="sleepTimerPluginPresets"></div>',
             '  </div>',
             '  <div class="sleepTimerPluginCustom"></div>',
-            '  <button type="button" is="emby-button" class="sleepTimerPluginCancel emby-button button-flat secondaryText">' + text('cancel') + '</button>',
+            '  <button type="button" class="sleepTimerPluginCancel emby-button button-flat secondaryText">' + text('cancel') + '</button>',
             '</section>'
         ].join('');
 
@@ -517,7 +589,6 @@
         state.options.presetMinutes.forEach(function (minutes) {
             const preset = document.createElement('button');
             preset.type = 'button';
-            preset.setAttribute('is', 'emby-button');
             preset.className = 'sleepTimerPluginPreset emby-button raised';
             preset.textContent = formatPreset(minutes);
             preset.addEventListener('click', function () {
@@ -529,12 +600,14 @@
         const customContainer = overlay.querySelector('.sleepTimerPluginCustom');
         if (state.options.allowCustomDuration) {
             customContainer.innerHTML = [
-                '<div class="sleepTimerPluginLabel" id="sleepTimerPluginCustomLabel">' + text('custom') + '</div>',
-                '<div class="sleepTimerPluginInputShell">',
-                '  <input is="emby-input" class="sleepTimerPluginMinutes emby-input" type="number" inputmode="numeric" min="1" max="' + state.options.maximumMinutes + '" value="30" aria-labelledby="sleepTimerPluginCustomLabel sleepTimerPluginMinutesUnit">',
-                '  <span id="sleepTimerPluginMinutesUnit" class="sleepTimerPluginInputSuffix secondaryText">' + text('minutes') + '</span>',
+                '<label class="sleepTimerPluginLabel" id="sleepTimerPluginCustomLabel" for="sleepTimerPluginMinutes">' + text('custom') + '</label>',
+                '<div class="sleepTimerPluginCustomRow">',
+                '  <div class="sleepTimerPluginInputShell">',
+                '    <input id="sleepTimerPluginMinutes" class="sleepTimerPluginMinutes emby-input" type="number" inputmode="numeric" min="1" max="' + state.options.maximumMinutes + '" value="30" aria-describedby="sleepTimerPluginMinutesUnit">',
+                '    <span id="sleepTimerPluginMinutesUnit" class="sleepTimerPluginInputSuffix secondaryText">' + text('minutes') + '</span>',
+                '  </div>',
+                '  <button type="button" class="sleepTimerPluginStart emby-button raised button-submit">' + text('start') + '</button>',
                 '</div>',
-                '<button type="button" is="emby-button" class="sleepTimerPluginStart emby-button raised button-submit">' + text('start') + '</button>'
             ].join('');
 
             customContainer.querySelector('.sleepTimerPluginStart').addEventListener('click', function () {
@@ -634,8 +707,8 @@
         const statusMeta = status.querySelector('.sleepTimerPluginStatusMeta');
         const cancel = state.dialog.overlay.querySelector('.sleepTimerPluginCancel');
         if (state.status.isActive) {
+            status.hidden = false;
             status.classList.add('is-active');
-            status.classList.remove('is-idle');
             statusTime.classList.add('buttonActive');
             statusTime.textContent = text('active', {
                 time: formatRemaining(remainingSeconds())
@@ -646,10 +719,10 @@
             });
             cancel.hidden = false;
         } else {
+            status.hidden = true;
             status.classList.remove('is-active');
-            status.classList.add('is-idle');
             statusTime.classList.remove('buttonActive');
-            statusTime.textContent = text('inactive');
+            statusTime.textContent = '';
             statusMeta.hidden = true;
             statusMeta.textContent = '';
             cancel.hidden = true;
@@ -751,6 +824,7 @@
             state.observer = new MutationObserver(scheduleEnsureSettingsMenuEntries);
             state.observer.observe(document.body, { childList: true, subtree: true });
             document.addEventListener('click', markPlayerSettingsOpen, true);
+            window.addEventListener('unhandledrejection', ignoreExpectedActionSheetDismissal);
             window.addEventListener('hashchange', scheduleEnsureSettingsMenuEntries);
             window.setInterval(tick, 1000);
             window.setInterval(function () {
@@ -760,13 +834,13 @@
             }, 5000);
 
             window.JellyfinSleepTimer = {
-                version: clientVersion() || '1.2.0.0',
+                version: clientVersion() || '1.3.0.0',
                 open: showDialog,
                 refresh: loadStatus,
                 cancel: cancelTimer,
                 diagnostics: function () {
                     return {
-                        version: clientVersion() || '1.2.0.0',
+                        version: clientVersion() || '1.3.0.0',
                         apiReady: apiClientReady(),
                         menuEntries: document.querySelectorAll(
                             '.sleepTimerPluginMenuItem').length,

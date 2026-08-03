@@ -85,7 +85,7 @@ jobs:
           else
             gh release create "${TAG}" "${ARTIFACT}" \
               --title "Sleep Timer ${VERSION}" \
-              --notes "Theme-aware sleep timer for Jellyfin Web 10.11.x. The entry now lives inside the native player settings menu alongside quality controls."
+              --notes "Theme-aware sleep timer for Jellyfin Web 10.11.x. This release matches Jellyfin's native one-line player settings rows, fixes first-tap behavior, and adds a compact mobile bottom sheet."
           fi
 
       - name: Update plugin repository manifest
@@ -109,7 +109,7 @@ jobs:
             --source-url "${SOURCE_URL}" \
             --checksum "${CHECKSUM}" \
             --timestamp "${TIMESTAMP}" \
-            --changelog "Moved Sleep Timer into Jellyfin's native player settings menu, removed the fragile control-bar selector, and added client diagnostics."
+            --changelog "Matched Jellyfin's native one-line settings rows, fixed first-tap behavior and input initialization, and added a compact mobile bottom sheet."
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"

@@ -4,7 +4,7 @@
 
 ## 功能
 
-- 在视频播放设置菜单中增加原生风格的“定时关闭”，并实时显示精确倒计时
+- 在视频播放设置菜单中增加原生单行“定时关闭”，倒计时仅显示在右侧状态位
 - 内置 15、30、45、60、90、120 分钟快捷项，管理员可修改
 - 支持 1–1440 分钟自定义时长
 - 到时操作可选“暂停播放”或“退出视频”
@@ -60,9 +60,9 @@ volumes:
 
 ## 手动安装
 
-1. 从 GitHub Releases 下载 `Jellyfin.Plugin.SleepTimer_1.2.0.0.zip`。
+1. 从 GitHub Releases 下载 `Jellyfin.Plugin.SleepTimer_1.3.0.0.zip`。
 2. 停止 Jellyfin。
-3. 在容器的 `/config/plugins` 下新建 `Sleep Timer_1.2.0.0` 文件夹。
+3. 在容器的 `/config/plugins` 下新建 `Sleep Timer_1.3.0.0` 文件夹。
 4. 将 ZIP 中的 `Jellyfin.Plugin.SleepTimer.dll` 解压到该文件夹。
 5. 启动 Jellyfin 并强制刷新 Web 页面。
 
@@ -132,7 +132,7 @@ dotnet build .\Jellyfin.Plugin.SleepTimer.sln --configuration Release
 Jellyfin.Plugin.SleepTimer/bin/Release/net9.0/Jellyfin.Plugin.SleepTimer.dll
 ```
 
-推送四段式版本标签（例如 `v1.2.0.0`）会触发 GitHub Actions：
+推送四段式版本标签（例如 `v1.3.0.0`）会触发 GitHub Actions：
 
 1. 构建并打包插件 DLL。
 2. 创建 GitHub Release 并上传 ZIP。
