@@ -34,6 +34,9 @@ jobs:
       - name: Check browser client syntax
         run: node --check Jellyfin.Plugin.SleepTimer/Web/client.js
 
+      - name: Check browser UI regressions
+        run: node scripts/check_client_regressions.mjs
+
       - name: Check repository metadata
         run: |
           python -m json.tool manifest.json >/dev/null

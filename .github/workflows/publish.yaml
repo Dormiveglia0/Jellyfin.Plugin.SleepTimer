@@ -62,6 +62,11 @@ jobs:
           dotnet restore Jellyfin.Plugin.SleepTimer.sln
           dotnet build Jellyfin.Plugin.SleepTimer.sln --configuration Release --no-restore
 
+      - name: Check browser client
+        run: |
+          node --check Jellyfin.Plugin.SleepTimer/Web/client.js
+          node scripts/check_client_regressions.mjs
+
       - name: Package plugin
         id: package
         shell: bash
@@ -85,7 +90,7 @@ jobs:
           else
             gh release create "${TAG}" "${ARTIFACT}" \
               --title "Sleep Timer ${VERSION}" \
-              --notes "Theme-aware sleep timer for Jellyfin Web 10.11.x. This release matches Jellyfin's native one-line player settings rows, fixes first-tap behavior, and adds a compact mobile bottom sheet."
+              --notes "Theme-aware sleep timer for Jellyfin Web 10.11.x. This release matches the native settings-row height, prevents overlapping panels, traps focus in the active dialog, and improves mobile custom-duration input."
           fi
 
       - name: Update plugin repository manifest
@@ -109,7 +114,7 @@ jobs:
             --source-url "${SOURCE_URL}" \
             --checksum "${CHECKSUM}" \
             --timestamp "${TIMESTAMP}" \
-            --changelog "Matched Jellyfin's native one-line settings rows, fixed first-tap behavior and input initialization, and added a compact mobile bottom sheet."
+            --changelog "Matched the native settings-row height, prevented overlapping panels, trapped focus in the active dialog, and improved mobile custom-duration input."
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"

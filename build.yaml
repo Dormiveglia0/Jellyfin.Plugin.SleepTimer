@@ -1,7 +1,7 @@
 ---
 name: "Sleep Timer"
 guid: "22cf1cd3-eefa-4126-8368-6b79872d2632"
-version: "1.3.0.0"
+version: "1.3.1.0"
 targetAbi: "10.11.0.0"
 framework: "net9.0"
 overview: "Adds a sleep timer to the Jellyfin Web player settings menu."
@@ -14,6 +14,6 @@ owner: "Dormiveglia0"
 artifacts:
 - "Jellyfin.Plugin.SleepTimer.dll"
 changelog: >
-  Matched Jellyfin's native one-line player settings rows, closed the player
-  settings sheet before opening Sleep Timer, repaired first-tap behavior and
-  input initialization, and added a compact mobile bottom sheet.
+  Matched Jellyfin's exact one-line player settings row height, waits for the
+  native settings sheet to close before opening Sleep Timer, keeps focus inside
+  the active dialog, and improves custom-duration focus and mobile keyboards.
