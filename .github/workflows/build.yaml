@@ -31,6 +31,9 @@ jobs:
       - name: Build
         run: dotnet build Jellyfin.Plugin.SleepTimer.sln --configuration Release --no-restore
 
+      - name: Check playback countdown regressions
+        run: dotnet run --project tests/Jellyfin.Plugin.SleepTimer.RegressionTests/Jellyfin.Plugin.SleepTimer.RegressionTests.csproj --configuration Release --no-build
+
       - name: Check browser client syntax
         run: node --check Jellyfin.Plugin.SleepTimer/Web/client.js
 

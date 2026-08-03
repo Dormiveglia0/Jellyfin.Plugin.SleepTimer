@@ -42,7 +42,7 @@ public sealed class SleepTimerController : ControllerBase
     [HttpGet("client.js")]
     [AllowAnonymous]
     [Produces("application/javascript")]
-    [ResponseCache(Duration = 3600, Location = ResponseCacheLocation.Client)]
+    [ResponseCache(Duration = 0, Location = ResponseCacheLocation.None, NoStore = true)]
     public ActionResult GetClientScript()
     {
         const string resourceName = "Jellyfin.Plugin.SleepTimer.Web.client.js";
@@ -59,7 +59,7 @@ public sealed class SleepTimerController : ControllerBase
     [HttpGet("client.css")]
     [AllowAnonymous]
     [Produces("text/css")]
-    [ResponseCache(Duration = 3600, Location = ResponseCacheLocation.Client)]
+    [ResponseCache(Duration = 0, Location = ResponseCacheLocation.None, NoStore = true)]
     public ActionResult GetClientStyles()
     {
         const string resourceName = "Jellyfin.Plugin.SleepTimer.Web.client.css";

@@ -36,13 +36,17 @@ public sealed class SleepTimerService : BackgroundService, ISleepTimerService
         int durationMinutes,
         SleepTimerAction action)
     {
+        var now = DateTimeOffset.UtcNow;
         var timer = new ActiveTimer(
             Guid.NewGuid(),
             userId,
             deviceId,
             durationMinutes,
             action,
-            DateTimeOffset.UtcNow.AddMinutes(durationMinutes));
+            new PlaybackCountdown(
+                TimeSpan.FromMinutes(durationMinutes),
+                now,
+                IsPlaybackActive(userId, deviceId)));
 
         _timers[TimerKey.Create(userId, deviceId)] = timer;
 
@@ -54,7 +58,7 @@ public sealed class SleepTimerService : BackgroundService, ISleepTimerService
             durationMinutes,
             action);
 
-        return ToStatus(timer);
+        return ToStatus(timer, timer.Countdown.Read());
     }
 
     /// <inheritdoc />
@@ -76,9 +80,15 @@ public sealed class SleepTimerService : BackgroundService, ISleepTimerService
     /// <inheritdoc />
     public SleepTimerStatusResponse GetStatus(Guid userId, string deviceId)
     {
-        return _timers.TryGetValue(TimerKey.Create(userId, deviceId), out var timer)
-            ? ToStatus(timer)
-            : new SleepTimerStatusResponse { IsActive = false };
+        if (!_timers.TryGetValue(TimerKey.Create(userId, deviceId), out var timer))
+        {
+            return new SleepTimerStatusResponse { IsActive = false };
+        }
+
+        var snapshot = timer.Countdown.Advance(
+            DateTimeOffset.UtcNow,
+            IsPlaybackActive(timer.UserId, timer.DeviceId));
+        return ToStatus(timer, snapshot);
     }
 
     /// <inheritdoc />
@@ -105,18 +115,34 @@ public sealed class SleepTimerService : BackgroundService, ISleepTimerService
 
     private async Task TriggerExpiredTimersAsync(CancellationToken cancellationToken)
     {
-        var now = DateTimeOffset.UtcNow;
-
         foreach (var pair in _timers)
         {
-            if (pair.Value.EndsAtUtc > now ||
-                !_timers.TryRemove(pair.Key, out var expiredTimer))
+            var timer = pair.Value;
+            var snapshot = timer.Countdown.Advance(
+                DateTimeOffset.UtcNow,
+                IsPlaybackActive(timer.UserId, timer.DeviceId));
+            if (!snapshot.IsExpired || !TryRemoveTimer(pair.Key, timer))
             {
                 continue;
             }
 
-            await ExecuteActionAsync(expiredTimer, cancellationToken).ConfigureAwait(false);
+            await ExecuteActionAsync(timer, cancellationToken).ConfigureAwait(false);
         }
+    }
+
+    private bool IsPlaybackActive(Guid userId, string deviceId)
+    {
+        return _sessionManager.Sessions.Any(session =>
+            session.UserId == userId &&
+            string.Equals(session.DeviceId, deviceId, StringComparison.OrdinalIgnoreCase) &&
+            session.NowPlayingItem is not null &&
+            session.PlayState is { IsPaused: false });
+    }
+
+    private bool TryRemoveTimer(TimerKey key, ActiveTimer timer)
+    {
+        return ((ICollection<KeyValuePair<TimerKey, ActiveTimer>>)_timers)
+            .Remove(new KeyValuePair<TimerKey, ActiveTimer>(key, timer));
     }
 
     private async Task ExecuteActionAsync(
@@ -171,17 +197,18 @@ public sealed class SleepTimerService : BackgroundService, ISleepTimerService
         }
     }
 
-    private static SleepTimerStatusResponse ToStatus(ActiveTimer timer)
+    private static SleepTimerStatusResponse ToStatus(
+        ActiveTimer timer,
+        CountdownSnapshot snapshot)
     {
-        var remaining = timer.EndsAtUtc - DateTimeOffset.UtcNow;
-
         return new SleepTimerStatusResponse
         {
             IsActive = true,
             TimerId = timer.Id,
             DurationMinutes = timer.DurationMinutes,
-            EndsAtUtc = timer.EndsAtUtc,
-            RemainingSeconds = Math.Max(0, (int)Math.Ceiling(remaining.TotalSeconds)),
+            EndsAtUtc = snapshot.ProjectedEndsAtUtc,
+            RemainingSeconds = snapshot.RemainingSeconds,
+            IsPaused = snapshot.IsPaused,
             Action = timer.Action.ToString().ToLowerInvariant()
         };
     }
@@ -200,5 +227,5 @@ public sealed class SleepTimerService : BackgroundService, ISleepTimerService
         string DeviceId,
         int DurationMinutes,
         SleepTimerAction Action,
-        DateTimeOffset EndsAtUtc);
+        PlaybackCountdown Countdown);
 }

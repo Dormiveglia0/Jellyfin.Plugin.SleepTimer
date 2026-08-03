@@ -26,7 +26,7 @@ assert.match(client,
     'Custom duration must request the mobile numeric keyboard without number spinners.');
 assert.doesNotMatch(client, /is="emby-input"/,
     'Customized built-in emby-input initialization breaks dynamically inserted inputs.');
-assert.match(css, /\.sleepTimerPluginMinutes:focus[\s\S]*?outline: none !important;/,
+assert.match(css, /#sleepTimerPluginMinutes:focus[\s\S]*?outline: none !important;/,
     'The input must suppress the browser/theme default focus outline.');
 
 const focusRule = css.match(
@@ -34,6 +34,27 @@ const focusRule = css.match(
 assert.ok(focusRule, 'The input shell needs a focus treatment.');
 assert.doesNotMatch(focusRule, /,\s*(?:inset\s+)?(?:-?\d|\.)/,
     'The input focus treatment must be a single ring, not stacked rings.');
+
+const presetRule = css.match(
+    /\.sleepTimerPluginPreset\s*\{(?<body>[\s\S]*?)\}/)?.groups?.body;
+assert.ok(presetRule, 'Preset buttons need a dedicated layout rule.');
+assert.match(presetRule, /justify-content:\s*center\s*!important;/,
+    'Preset values must be horizontally centered even under custom Jellyfin themes.');
+assert.match(presetRule, /text-align:\s*center\s*!important;/,
+    'Preset labels must retain centered text alignment.');
+
+const presetFormatter = client.slice(
+    client.indexOf('    function formatPreset'),
+    client.indexOf('    function actionLabel'));
+assert.match(presetFormatter, /text\('minutePreset',\s*\{ value: minutes \}\)/,
+    'Every preset must use one minute-based label format.');
+assert.doesNotMatch(presetFormatter, /hour|\/\s*60/,
+    'Preset labels must not switch to hour-based wording.');
+
+assert.doesNotMatch(client, /runClientFailsafe|failsafeTimerId/,
+    'The browser must not expire a server-owned timer using wall-clock time.');
+assert.match(client, /document\.addEventListener\('pause', handlePlaybackStateChange, true\)/,
+    'Pause events must freeze the locally rendered countdown immediately.');
 
 const transitionSource = client.slice(
     client.indexOf('    function actionSheetIsVisible'),

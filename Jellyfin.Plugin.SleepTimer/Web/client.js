@@ -10,7 +10,7 @@
 
     window.__jellyfinSleepTimerLoaded = true;
 
-    const clientScriptSource = document.currentScript?.src || '';
+    const clientBuildVersion = '1.3.2.0';
 
     const copy = {
         zh: {
@@ -33,10 +33,6 @@
             cancelled: '定时关闭已取消',
             invalid: '请输入 1 到 {max} 之间的分钟数',
             error: '操作失败，请检查 Jellyfin 服务器日志',
-            expiredPause: '时间已到，播放已暂停',
-            expiredStop: '时间已到，正在退出视频',
-            hour: '{value} 小时',
-            hourMinute: '{hours} 小时 {minutes} 分钟',
             minutePreset: '{value} 分钟'
         },
         en: {
@@ -59,10 +55,6 @@
             cancelled: 'Sleep timer cancelled',
             invalid: 'Enter a value between 1 and {max} minutes',
             error: 'The operation failed. Check the Jellyfin server log.',
-            expiredPause: 'Time is up. Playback has been paused.',
-            expiredStop: 'Time is up. Exiting the video.',
-            hour: '{value} hour',
-            hourMinute: '{hours} hr {minutes} min',
             minutePreset: '{value} min'
         }
     };
@@ -83,7 +75,6 @@
         selectedAction: 'pause',
         dialog: null,
         busy: false,
-        failsafeTimerId: null,
         observer: null,
         ensureQueued: false,
         settingsOpenedAt: 0,
@@ -103,11 +94,7 @@
     }
 
     function clientVersion() {
-        try {
-            return new URL(clientScriptSource, window.location.href).searchParams.get('v') || '';
-        } catch {
-            return '';
-        }
+        return clientBuildVersion;
     }
 
     function loadStyles() {
@@ -186,17 +173,42 @@
     }
 
     function normalizeStatus(value) {
-        if (!value || !value.isActive || !value.endsAtUtc) {
+        if (!value || !value.isActive) {
             return { isActive: false };
         }
 
+        const rawRemainingSeconds = Number(value.remainingSeconds);
+        const fallbackRemainingSeconds = value.endsAtUtc
+            ? Math.ceil((Date.parse(value.endsAtUtc) - Date.now()) / 1000)
+            : 0;
+        const remainingSeconds = Number.isFinite(rawRemainingSeconds)
+            ? rawRemainingSeconds
+            : Number.isFinite(fallbackRemainingSeconds)
+            ? fallbackRemainingSeconds
+            : 0;
         return {
             isActive: true,
             timerId: value.timerId || null,
             durationMinutes: Number(value.durationMinutes || 0),
             endsAtUtc: value.endsAtUtc,
+            remainingSeconds: Math.max(0, remainingSeconds),
+            synchronizedAt: Date.now(),
+            isPaused: Boolean(value.isPaused),
             action: value.action === 'stop' ? 'stop' : 'pause'
         };
+    }
+
+    function useCurrentPlaybackState(status) {
+        if (!status.isActive) {
+            return status;
+        }
+
+        const video = document.querySelector('video');
+        if (video) {
+            status.isPaused = video.paused || video.ended;
+        }
+
+        return status;
     }
 
     async function loadOptions() {
@@ -226,12 +238,7 @@
         }
 
         const result = await apiRequest('status', 'GET', null, { deviceId: deviceId() });
-        const previousTimerId = state.status.timerId;
-        state.status = normalizeStatus(result);
-
-        if (state.status.timerId !== previousTimerId) {
-            state.failsafeTimerId = null;
-        }
+        state.status = useCurrentPlaybackState(normalizeStatus(result));
 
         if (state.status.isActive) {
             state.selectedAction = state.status.action;
@@ -264,8 +271,7 @@
                 deviceId: deviceId()
             });
 
-            state.status = normalizeStatus(result);
-            state.failsafeTimerId = null;
+            state.status = useCurrentPlaybackState(normalizeStatus(result));
             renderMenuEntries();
             closeDialog();
             showToast(text('started', {
@@ -292,7 +298,6 @@
         try {
             await apiRequest('cancel', 'POST', null, { deviceId: deviceId() });
             state.status = { isActive: false };
-            state.failsafeTimerId = null;
             renderMenuEntries();
             closeDialog();
             showToast(text('cancelled'));
@@ -306,11 +311,21 @@
     }
 
     function remainingSeconds() {
-        if (!state.status.isActive || !state.status.endsAtUtc) {
+        if (!state.status.isActive) {
             return 0;
         }
 
-        return Math.ceil((Date.parse(state.status.endsAtUtc) - Date.now()) / 1000);
+        const synchronizedRemaining = Math.max(
+            0,
+            Number(state.status.remainingSeconds) || 0);
+        if (state.status.isPaused) {
+            return Math.ceil(synchronizedRemaining);
+        }
+
+        const elapsedSeconds = Math.max(
+            0,
+            (Date.now() - Number(state.status.synchronizedAt || Date.now())) / 1000);
+        return Math.max(0, Math.ceil(synchronizedRemaining - elapsedSeconds));
     }
 
     function formatRemaining(seconds) {
@@ -327,17 +342,7 @@
     }
 
     function formatPreset(minutes) {
-        if (minutes < 60) {
-            return text('minutePreset', { value: minutes });
-        }
-
-        const hours = Math.floor(minutes / 60);
-        const remainder = minutes % 60;
-        if (!remainder) {
-            return text('hour', { value: hours });
-        }
-
-        return text('hourMinute', { hours: hours, minutes: remainder });
+        return text('minutePreset', { value: minutes });
     }
 
     function actionLabel(action) {
@@ -605,7 +610,6 @@
             '<section class="sleepTimerPluginDialog dialog" role="dialog" aria-modal="true" aria-labelledby="sleepTimerPluginTitle" tabindex="-1">',
             '  <header class="sleepTimerPluginHeader">',
             '    <div class="sleepTimerPluginTitleGroup">',
-            '      <span class="material-icons sleepTimerPluginMoon buttonActive" aria-hidden="true">bedtime</span>',
             '      <h2 id="sleepTimerPluginTitle">' + text('title') + '</h2>',
             '    </div>',
             '    <button type="button" class="sleepTimerPluginClose paper-icon-button-light" aria-label="' + text('close') + '">',
@@ -826,46 +830,25 @@
         });
     }
 
-    function runClientFailsafe() {
-        if (!state.status.isActive ||
-            remainingSeconds() > 0 ||
-            state.failsafeTimerId === state.status.timerId) {
+    function handlePlaybackStateChange(event) {
+        const video = event.target instanceof HTMLMediaElement
+            ? event.target
+            : null;
+        if (!video || video.tagName !== 'VIDEO' || !state.status.isActive) {
             return;
         }
 
-        state.failsafeTimerId = state.status.timerId;
-        const video = document.querySelector('video');
-
-        if (state.status.action === 'stop') {
-            if (video && !video.paused) {
-                video.pause();
-            }
-            showToast(text('expiredStop'));
-            window.setTimeout(function () {
-                if (document.querySelector('#videoOsdPage') &&
-                    String(window.location.hash).startsWith('#/video')) {
-                    window.history.back();
-                }
-            }, 150);
-            return;
-        }
-
-        if (video && !video.paused) {
-            video.pause();
-        } else if (!video) {
-            const pauseButton = document.querySelector('#videoOsdPage .btnPause');
-            if (pauseButton) {
-                pauseButton.click();
-            }
-        }
-        showToast(text('expiredPause'));
+        state.status.remainingSeconds = remainingSeconds();
+        state.status.synchronizedAt = Date.now();
+        state.status.isPaused = video.paused || video.ended;
+        renderMenuEntries();
+        renderDialogStatus();
     }
 
     function tick() {
         renderMenuEntries();
         if (state.status.isActive) {
             renderDialogStatus();
-            runClientFailsafe();
         }
     }
 
@@ -911,6 +894,9 @@
             state.observer = new MutationObserver(scheduleEnsureSettingsMenuEntries);
             state.observer.observe(document.body, { childList: true, subtree: true });
             document.addEventListener('click', markPlayerSettingsOpen, true);
+            document.addEventListener('play', handlePlaybackStateChange, true);
+            document.addEventListener('pause', handlePlaybackStateChange, true);
+            document.addEventListener('ended', handlePlaybackStateChange, true);
             window.addEventListener('unhandledrejection', ignoreExpectedActionSheetDismissal);
             window.addEventListener('hashchange', scheduleEnsureSettingsMenuEntries);
             window.setInterval(tick, 1000);
@@ -921,13 +907,13 @@
             }, 5000);
 
             window.JellyfinSleepTimer = {
-                version: clientVersion() || '1.3.1.0',
+                version: clientVersion(),
                 open: showDialog,
                 refresh: loadStatus,
                 cancel: cancelTimer,
                 diagnostics: function () {
                     return {
-                        version: clientVersion() || '1.3.1.0',
+                        version: clientVersion(),
                         apiReady: apiClientReady(),
                         menuEntries: document.querySelectorAll(
                             '.sleepTimerPluginMenuItem').length,

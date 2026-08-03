@@ -38,6 +38,12 @@ public sealed class SleepTimerStatusResponse
     public int RemainingSeconds { get; set; }
 
     /// <summary>
+    /// Gets or sets a value indicating whether playback and the countdown are paused.
+    /// </summary>
+    [JsonPropertyName("isPaused")]
+    public bool IsPaused { get; set; }
+
+    /// <summary>
     /// Gets or sets the expiration action.
     /// </summary>
     [JsonPropertyName("action")]

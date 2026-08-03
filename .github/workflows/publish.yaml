@@ -67,6 +67,9 @@ jobs:
           node --check Jellyfin.Plugin.SleepTimer/Web/client.js
           node scripts/check_client_regressions.mjs
 
+      - name: Check playback countdown regressions
+        run: dotnet run --project tests/Jellyfin.Plugin.SleepTimer.RegressionTests/Jellyfin.Plugin.SleepTimer.RegressionTests.csproj --configuration Release --no-build
+
       - name: Package plugin
         id: package
         shell: bash
@@ -90,7 +93,7 @@ jobs:
           else
             gh release create "${TAG}" "${ARTIFACT}" \
               --title "Sleep Timer ${VERSION}" \
-              --notes "Theme-aware sleep timer for Jellyfin Web 10.11.x. This release matches the native settings-row height, prevents overlapping panels, traps focus in the active dialog, and improves mobile custom-duration input."
+              --notes "Theme-aware sleep timer for Jellyfin Web 10.11.x. This release counts only active playback time, freezes while paused, uses minute-only centered presets, and simplifies custom-duration focus across themes and mobile layouts."
           fi
 
       - name: Update plugin repository manifest
@@ -114,7 +117,7 @@ jobs:
             --source-url "${SOURCE_URL}" \
             --checksum "${CHECKSUM}" \
             --timestamp "${TIMESTAMP}" \
-            --changelog "Matched the native settings-row height, prevented overlapping panels, trapped focus in the active dialog, and improved mobile custom-duration input."
+            --changelog "Counts only active playback time, freezes while paused, uses minute-only centered presets, and simplifies custom-duration focus across themes and mobile layouts."
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
